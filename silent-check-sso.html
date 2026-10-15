@@ -1,0 +1,8 @@
+<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="UTF-8"><title>Sesión</title></head>
+<body>
+  <!-- Keycloak comprueba la sesión en un iframe invisible y devuelve el resultado a la página -->
+  <script>parent.postMessage(location.href, location.origin);</script>
+</body>
+</html>

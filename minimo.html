@@ -2,11 +2,87 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <title>Título</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mini web</title>
+  <style>
+    :root { --bg: #f6f7f9; --card: #fff; --ink: #172030; --muted: #5b6577; --line: #dde2ea; --accent: #2f5bff; }
+    @media (prefers-color-scheme: dark) { :root { --bg: #0f141c; --card: #171e29; --ink: #e8edf5; --muted: #9aa6b8; --line: #283243; --accent: #7d98ff; } }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; }
+    header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between;
+             padding: 14px 20px; background: var(--card); border-bottom: 1px solid var(--line); }
+    header strong { font-size: 17px; }
+    .sesion { display: flex; gap: 10px; align-items: center; color: var(--muted); font-size: 15px; }
+    button { font: inherit; font-size: 15px; padding: 7px 14px; border-radius: 8px; cursor: pointer;
+             border: 1px solid var(--accent); background: var(--accent); color: #fff; }
+    button.secundario { background: transparent; color: var(--accent); }
+    button[hidden] { display: none; }
+    main { max-width: 680px; margin: 48px auto; padding: 0 20px; }
+    h1 { margin: 0 0 8px; }
+    p { color: var(--muted); }
+  </style>
 </head>
 <body>
-  <h1>Hola</h1>
-<!-- Asistente IA: su configuración está en el servidor (sitios/averan.github.io.md) -->
-<script src="https://asistente-ia.faenabot.stream/embed.js" defer></script>
+  <header>
+    <strong>Mini web · intranet de prueba</strong>
+    <div class="sesion">
+      <span id="estado">Comprobando sesión…</span>
+      <button id="entrar" hidden>Iniciar sesión</button>
+      <button id="salir" class="secundario" hidden>Salir</button>
+    </div>
+  </header>
+  <main>
+    <h1>Hola</h1>
+    <p>Esta página simula una intranet con inicio de sesión único (SSO). Al iniciar sesión, el asistente sabe quién eres:
+       no te pide nombre ni correo y tus solicitudes quedan a tu nombre, verificadas.</p>
+  </main>
+
+  <!-- Inicio de sesión de la página (OpenID Connect con Keycloak) + asistente IA.
+       La página entrega su token al asistente con window.ASISTENTE.obtenerToken (sitios/averan.github.io.md). -->
+  <script type="module">
+    import Keycloak from 'https://cdn.jsdelivr.net/npm/keycloak-js@26.2.4/+esm';
+
+    const local = ['localhost', '127.0.0.1'].includes(location.hostname);   // pruebas en este Mac
+    const kc = new Keycloak({
+      url: 'https://auth.faenabot.stream',   // Keycloak de prueba (en el Mac, publicado por el túnel)
+      realm: 'demo',
+      clientId: 'minimoweb',
+    });
+    const listo = kc.init({
+      onLoad: 'check-sso',
+      pkceMethod: 'S256',
+      silentCheckSsoRedirectUri: new URL('silent-check-sso.html', location.href).href,
+      checkLoginIframe: false,
+    }).catch(() => false);
+
+    // El asistente pide el token antes de cada petición: siempre vigente y solo en memoria.
+    window.ASISTENTE = Object.assign(window.ASISTENTE || {}, {
+      obtenerToken: async () => {
+        await listo;
+        if (!kc.authenticated) return null;
+        try { await kc.updateToken(30); } catch { return null; }
+        return kc.token;
+      },
+      ...(local ? { backend: 'http://localhost:5299' } : {}),   // servidor de pruebas en este Mac
+    });
+
+    const $ = id => document.getElementById(id);
+    function pintar() {
+      const t = kc.tokenParsed;
+      $('estado').textContent = kc.authenticated ? `Hola, ${t?.name || t?.preferred_username}` : 'Sin sesión';
+      $('entrar').hidden = !!kc.authenticated;
+      $('salir').hidden = !kc.authenticated;
+    }
+    $('entrar').onclick = () => kc.login();
+    $('salir').onclick = () => { window.asistenteIA?.reset(); kc.logout({ redirectUri: location.href }); };
+    kc.onTokenExpired = () => kc.updateToken(30).catch(() => {});
+
+    listo.then(() => { pintar(); window.asistenteIA?.actualizarSesion?.(); });
+
+    // El asistente se carga después de configurar window.ASISTENTE
+    const embed = document.createElement('script');
+    embed.src = local ? 'http://localhost:5198/embed.js' : 'https://asistente-ia.faenabot.stream/embed.js';
+    document.body.append(embed);
+  </script>
 </body>
 </html>
